@@ -1125,6 +1125,28 @@ void rl_update_for_one_candidate(agent* thisAgent, slot* s, bool consistency, pr
    could easily cause a core dump or worse.
 
 ************************************************************************** */
+void print_preference_resolution(agent* thisAgent, slot* s)
+{
+    preference* p;
+    thisAgent->outputManager->printa_sf(thisAgent,
+        "\n-------------------------------\nRUNNING PREFERENCE SEMANTICS...\n-------------------------------\n");
+    thisAgent->outputManager->printa_sf(thisAgent, "All Preferences for slot:");
+
+    for (int i = 0; i < NUM_PREFERENCE_TYPES; i++)
+    {
+        if (s->preferences[i])
+        {
+            thisAgent->outputManager->printa_sf(thisAgent, "\n   %ss:\n", preference_name(i));
+            for (p = s->preferences[i]; p; p = p->next)
+            {
+                thisAgent->outputManager->printa_sf(thisAgent, "   ");
+                print_preference(thisAgent, p);
+            }
+        }
+    }
+    thisAgent->outputManager->printa_sf(thisAgent, "-------------------------------\n");
+}
+
 preference* run_non_context_preference_semantics(agent* thisAgent, slot* s)
 {
     preference* p, *candidates = NULL;
@@ -1165,6 +1187,15 @@ preference* run_non_context_preference_semantics(agent* thisAgent, slot* s)
     return candidates;
 }
 
+inline byte generate_OSK(agent* thisAgent, slot* s, preference* winner, preference* candidates, bool pAdd_OSK, byte pImpasseType)
+{
+    if (pAdd_OSK)
+    {
+        thisAgent->explanationBasedChunker->generate_relevant_OSK(s, winner, candidates);
+    }
+    return pImpasseType;
+}
+
 byte run_preference_semantics(agent* thisAgent,
                               slot* s,
                               preference** result_candidates,
@@ -1178,28 +1209,21 @@ byte run_preference_semantics(agent* thisAgent,
 
     assert(s->isa_context_slot);
 
-    /* Set a flag to determine if a context-dependent preference set makes sense in this context.
-     * We can ignore OSK prefs when:
-     * - Run_preference_semantics is called for a consistency check (don't want side effects)
-     * - For non-context slots (only makes sense for operators)
+    /* We can ignore OSK prefs when:
+     * - This function is called for a consistency check (don't want side effects)
      * - For context-slots at the top level (will never be backtraced through)
-     * - when the learning system parameter is set off (note, this is independent of whether learning is on) */
+     * - when the SETTING_EBC_ADD_OSK parameter is disabled (this is independent of whether learning is on) */
     add_OSK = (thisAgent->explanationBasedChunker->ebc_settings[SETTING_EBC_ADD_OSK] && !consistency && (s->id->id->level > TOP_GOAL_LEVEL));
 
     /* Empty the context-dependent preference set in the slot */
-
-    if (add_OSK && s->OSK_prefs)
-    {
-        clear_preference_list(thisAgent, s->OSK_prefs);
-    }
+    if (add_OSK && s->OSK_prefs) clear_preference_list(thisAgent, s->OSK_prefs);
 
     /* If the slot has no preferences at all, things are trivial --- */
 
     if (!s->all_preferences)
     {
         *result_candidates = NIL;
-        if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, NULL);
-        return NONE_IMPASSE_TYPE;
+        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
     }
 
     /* If this is the true decision slot and selection has been made, attempt force selection */
@@ -1208,8 +1232,7 @@ byte run_preference_semantics(agent* thisAgent,
     {
         if (select_get_operator(thisAgent) != NULL)
         {
-            preference* force_result = select_force(thisAgent,
-                                                    s->preferences[ACCEPTABLE_PREFERENCE_TYPE], !predict);
+            preference* force_result = select_force(thisAgent, s->preferences[ACCEPTABLE_PREFERENCE_TYPE], !predict);
 
             if (force_result)
             {
@@ -1221,37 +1244,19 @@ byte run_preference_semantics(agent* thisAgent,
                     build_rl_trace(thisAgent, force_result, force_result);
                     rl_tabulate_reward_values(thisAgent);
                     exploration_compute_value_of_candidate(thisAgent, force_result, s, 0);
-                    rl_perform_update(thisAgent, force_result->numeric_value,
-                                      force_result->rl_contribution, s->id);
+                    rl_perform_update(thisAgent, force_result->numeric_value, force_result->rl_contribution, s->id);
                 }
-                if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, force_result);
-                return NONE_IMPASSE_TYPE;
+                return generate_OSK(thisAgent, s, force_result, NULL, add_OSK, NONE_IMPASSE_TYPE);
             }
         }
     }
 
-    /* If debugging a context-slot, print all preferences that we're deciding through */
-
+    /* If debugging a context-slot, print all preferences that we're deciding through.  Disabled
+     * for now since it's spammy and this doesn't seem to really fit into the backtracing trace.
+     * Perhaps we should add another trace type for this. */
 //    if (thisAgent->trace_settings[TRACE_BACKTRACING_SYSPARAM])
 //    {
-//
-//        thisAgent->outputManager->printa_sf(thisAgent,
-//              "\n-------------------------------\nRUNNING PREFERENCE SEMANTICS...\n-------------------------------\n");
-//        thisAgent->outputManager->printa_sf(thisAgent, "All Preferences for slot:");
-//
-//        for (int i = 0; i < NUM_PREFERENCE_TYPES; i++)
-//        {
-//            if (s->preferences[i])
-//            {
-//                thisAgent->outputManager->printa_sf(thisAgent, "\n   %ss:\n", preference_name(i));
-//                for (p = s->preferences[i]; p; p = p->next)
-//                {
-//                    thisAgent->outputManager->printa_sf(thisAgent, "   ");
-//                    print_preference(thisAgent, p);
-//                }
-//            }
-//        }
-//        thisAgent->outputManager->printa_sf(thisAgent, "-------------------------------\n");
+//        print_preference_resolution(thisAgent, s);
 //    }
 
     /* === Requires === */
@@ -1282,8 +1287,7 @@ byte run_preference_semantics(agent* thisAgent,
 
         if (candidates->next_candidate)
         {
-            if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, NULL);
-            return CONSTRAINT_FAILURE_IMPASSE_TYPE;
+            return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, CONSTRAINT_FAILURE_IMPASSE_TYPE);
         }
 
         /* Check if we have also have a prohibit preference. If so, return constraint failure.
@@ -1293,24 +1297,18 @@ byte run_preference_semantics(agent* thisAgent,
         for (p = s->preferences[PROHIBIT_PREFERENCE_TYPE]; p != NIL; p = p->next)
             if (p->value == value)
             {
-                if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, NULL);
-                return CONSTRAINT_FAILURE_IMPASSE_TYPE;
+                return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, CONSTRAINT_FAILURE_IMPASSE_TYPE);
             }
 
         /* --- We have a winner, so update RL --- */
 
         rl_update_for_one_candidate(thisAgent, s, consistency, candidates);
 
-        /* Print a message that we're adding the require preference to the OSK prefs
-         * even though we really aren't.  Requires aren't actually handled by
-         * the OSK prefs mechanism since they are already backtraced through. */
+        /* We don't add require preference to the OSK prefs since requires aren't actually
+         * handled by the OSK prefs mechanism since they are already backtraced through. */
 
-//        if (thisAgent->trace_settings[TRACE_BACKTRACING_SYSPARAM])
-//        {
-//            thisAgent->outputManager->printa_sf(thisAgent, "--> Adding preference to OSK prefs: ");
-//            print_preference(thisAgent, candidates);
-//        }
-        if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, candidates);
+        return generate_OSK(thisAgent, s, candidates, NULL, add_OSK, NONE_IMPASSE_TYPE);
+        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, candidates);
         return NONE_IMPASSE_TYPE;
     }
 
@@ -1384,7 +1382,8 @@ byte run_preference_semantics(agent* thisAgent,
                 clear_preference_list(thisAgent, s->OSK_prefs);
             }
         }
-        if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, candidates);
+        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
+        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, candidates);
 
         return NONE_IMPASSE_TYPE;
     }
@@ -1493,7 +1492,8 @@ byte run_preference_semantics(agent* thisAgent,
             {
                 clear_preference_list(thisAgent, s->OSK_prefs);
             }
-            if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, NULL);
+            return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
+            if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, NULL);
 
             return CONFLICT_IMPASSE_TYPE;
         }
@@ -1563,7 +1563,8 @@ byte run_preference_semantics(agent* thisAgent,
                 clear_preference_list(thisAgent, s->OSK_prefs);
             }
         }
-        if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, candidates);
+        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
+        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, candidates);
         return NONE_IMPASSE_TYPE;
     }
 
@@ -1632,7 +1633,8 @@ byte run_preference_semantics(agent* thisAgent,
                 clear_preference_list(thisAgent, s->OSK_prefs);
             }
         }
-        if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, candidates);
+        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
+        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, candidates);
         return NONE_IMPASSE_TYPE;
     }
 
@@ -1721,7 +1723,8 @@ byte run_preference_semantics(agent* thisAgent,
                 clear_preference_list(thisAgent, s->OSK_prefs);
             }
         }
-        if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, candidates);
+        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
+        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, candidates);
         return NONE_IMPASSE_TYPE;
     }
 
@@ -1878,7 +1881,8 @@ byte run_preference_semantics(agent* thisAgent,
             *result_candidates = candidates;
         }
 
-        if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, *result_candidates);
+        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
+        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, *result_candidates);
         return NONE_IMPASSE_TYPE;
     }
 
@@ -1890,7 +1894,8 @@ byte run_preference_semantics(agent* thisAgent,
         clear_preference_list(thisAgent, s->OSK_prefs);
     }
 
-    if (add_OSK) thisAgent->explanationBasedChunker->update_proposal_OSK(s, NULL);
+    return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
+    if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, NULL);
     return TIE_IMPASSE_TYPE;
 }
 

@@ -83,9 +83,7 @@ class Explanation_Based_Chunker
         /* Methods for operator selection knowledge tracking. */
         void    add_to_OSK(slot* s, preference* pref, bool unique_value = true);
         void    copy_OSK(instantiation* inst);
-        void    copy_proposal_OSK(instantiation* inst, cons* newOSK);
-        void    update_proposal_OSK(slot* s, preference* winner);
-        void    generate_relevant_OSK(preference* winner, preference* candidates);
+        void    generate_relevant_OSK(slot* s, preference* winner, preference* candidates);
 
         /* Methods for identity set propagation and analysis */
         Identity*   create_new_identity(Symbol* pGoal);
@@ -227,6 +225,10 @@ class Explanation_Based_Chunker
 
         /* List of STIs created in the sub-state that are linked to LTMs.  Used to add link-stm-to-ltm actions */
         rhs_value_list*     local_linked_STIs;
+
+        /* Methods for operator selection knowledge tracking. */
+        void    copy_proposal_OSK(instantiation* inst, cons* newOSK);
+        void    update_proposal_OSK(slot* s, preference* winner);
 
         /* Explanation/identity generation methods */
         void            add_var_test_bound_identity_to_id_test(condition* cond, byte field_num, rete_node_level levels_up);
