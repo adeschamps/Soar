@@ -1187,11 +1187,11 @@ preference* run_non_context_preference_semantics(agent* thisAgent, slot* s)
     return candidates;
 }
 
-inline byte generate_OSK(agent* thisAgent, slot* s, preference* winner, preference* candidates, bool pAdd_OSK, byte pImpasseType)
+inline byte generate_OSK(agent* thisAgent, slot* s, preference* winner, bool pAdd_OSK, byte pImpasseType)
 {
     if (pAdd_OSK)
     {
-        thisAgent->explanationBasedChunker->generate_relevant_OSK(s, winner, candidates);
+        thisAgent->explanationBasedChunker->generate_relevant_OSK(s, winner);
     }
     return pImpasseType;
 }
@@ -1203,7 +1203,7 @@ byte run_preference_semantics(agent* thisAgent,
                               bool predict)
 {
     preference* p, *p2, *cand, *prev_cand;
-    bool match_found, not_all_indifferent, some_numeric, add_OSK, some_not_worst = false;
+    bool add_OSK, match_found, not_all_indifferent, some_numeric, some_not_worst;
     preference* candidates;
     Symbol* value;
 
@@ -1223,7 +1223,7 @@ byte run_preference_semantics(agent* thisAgent,
     if (!s->all_preferences)
     {
         *result_candidates = NIL;
-        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
+        return generate_OSK(thisAgent, s, NULL, add_OSK, NONE_IMPASSE_TYPE);
     }
 
     /* If this is the true decision slot and selection has been made, attempt force selection */
@@ -1246,7 +1246,7 @@ byte run_preference_semantics(agent* thisAgent,
                     exploration_compute_value_of_candidate(thisAgent, force_result, s, 0);
                     rl_perform_update(thisAgent, force_result->numeric_value, force_result->rl_contribution, s->id);
                 }
-                return generate_OSK(thisAgent, s, force_result, NULL, add_OSK, NONE_IMPASSE_TYPE);
+                return generate_OSK(thisAgent, s, force_result, add_OSK, NONE_IMPASSE_TYPE);
             }
         }
     }
@@ -1287,7 +1287,7 @@ byte run_preference_semantics(agent* thisAgent,
 
         if (candidates->next_candidate)
         {
-            return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, CONSTRAINT_FAILURE_IMPASSE_TYPE);
+            return generate_OSK(thisAgent, s, NULL, add_OSK, CONSTRAINT_FAILURE_IMPASSE_TYPE);
         }
 
         /* Check if we have also have a prohibit preference. If so, return constraint failure.
@@ -1295,21 +1295,17 @@ byte run_preference_semantics(agent* thisAgent,
 
         value = candidates->value;
         for (p = s->preferences[PROHIBIT_PREFERENCE_TYPE]; p != NIL; p = p->next)
+        {
             if (p->value == value)
             {
-                return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, CONSTRAINT_FAILURE_IMPASSE_TYPE);
+                return generate_OSK(thisAgent, s, NULL, add_OSK, CONSTRAINT_FAILURE_IMPASSE_TYPE);
             }
+        }
 
         /* --- We have a winner, so update RL --- */
 
         rl_update_for_one_candidate(thisAgent, s, consistency, candidates);
-
-        /* We don't add require preference to the OSK prefs since requires aren't actually
-         * handled by the OSK prefs mechanism since they are already backtraced through. */
-
-        return generate_OSK(thisAgent, s, candidates, NULL, add_OSK, NONE_IMPASSE_TYPE);
-        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, candidates);
-        return NONE_IMPASSE_TYPE;
+        return generate_OSK(thisAgent, s, candidates, add_OSK, NONE_IMPASSE_TYPE);
     }
 
     /* === Acceptables, Prohibits, Rejects === */
@@ -1348,50 +1344,17 @@ byte run_preference_semantics(agent* thisAgent,
         }
     }
 
-    /* If there are reject or prohibit preferences, then
-     * add all reject and prohibit preferences to OSK prefs */
-
-    if (add_OSK)
-    {
-        if (s->preferences[PROHIBIT_PREFERENCE_TYPE] || s->preferences[REJECT_PREFERENCE_TYPE])
-        {
-            for (p = s->preferences[PROHIBIT_PREFERENCE_TYPE]; p != NIL; p = p->next)
-            {
-                thisAgent->explanationBasedChunker->add_to_OSK(s, p);
-            }
-            for (p = s->preferences[REJECT_PREFERENCE_TYPE]; p != NIL; p = p->next)
-            {
-                thisAgent->explanationBasedChunker->add_to_OSK(s, p);
-            }
-        }
-    }
-
     /* Exit point 1: Check if we're done, i.e. 0 or 1 candidates left */
     if ((!candidates) || (!candidates->next_candidate))
     {
         *result_candidates = candidates;
-        if (candidates)
-        {
-            /* Update RL values for the winning candidate */
-            rl_update_for_one_candidate(thisAgent, s, consistency, candidates);
-        }
-        else
-        {
-            if (add_OSK && s->OSK_prefs)
-            {
-                clear_preference_list(thisAgent, s->OSK_prefs);
-            }
-        }
-        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
-        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, candidates);
-
-        return NONE_IMPASSE_TYPE;
+        if (candidates) rl_update_for_one_candidate(thisAgent, s, consistency, candidates);
+        return generate_OSK(thisAgent, s, candidates, add_OSK, NONE_IMPASSE_TYPE);
     }
 
     /* === Better/Worse === */
 
-    if (s->preferences[BETTER_PREFERENCE_TYPE]
-            || s->preferences[WORSE_PREFERENCE_TYPE])
+    if (s->preferences[BETTER_PREFERENCE_TYPE] || s->preferences[WORSE_PREFERENCE_TYPE])
     {
         Symbol* j, *k;
 
@@ -1473,13 +1436,9 @@ byte run_preference_semantics(agent* thisAgent,
                 if (cand->value->decider_flag != CONFLICTED_DECIDER_FLAG)
                 {
                     if (prev_cand)
-                    {
                         prev_cand->next_candidate = cand->next_candidate;
-                    }
                     else
-                    {
                         candidates = cand->next_candidate;
-                    }
                 }
                 else
                 {
@@ -1488,58 +1447,24 @@ byte run_preference_semantics(agent* thisAgent,
                 cand = cand->next_candidate;
             }
             *result_candidates = candidates;
-            if (add_OSK && s->OSK_prefs)
-            {
-                clear_preference_list(thisAgent, s->OSK_prefs);
-            }
-            return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
-            if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, NULL);
-
-            return CONFLICT_IMPASSE_TYPE;
+            return generate_OSK(thisAgent, s, NULL, add_OSK, CONFLICT_IMPASSE_TYPE);
         }
 
-        /* Otherwise, delete conflicted candidates from candidate list.
-         * Also add better preferences to OSK prefs for every item in the candidate
-         * list and delete acceptable preferences from the OSK prefs for those that
-         * don't make the candidate list.*/
+        /* Otherwise, delete conflicted candidates from candidate list.*/
 
         prev_cand = NIL;
         cand = candidates;
         while (cand)
         {
             if (cand->value->decider_flag == CONFLICTED_DECIDER_FLAG)
-            {
-                /* Remove this preference from the candidate list */
+            {   /* Remove this preference from the candidate list */
                 if (prev_cand)
-                {
                     prev_cand->next_candidate = cand->next_candidate;
-                }
                 else
-                {
                     candidates = cand->next_candidate;
-                }
-
             }
             else
             {
-                if (add_OSK)
-                {
-                    /* Add better/worse preferences to OSK prefs */
-                    for (p = s->preferences[BETTER_PREFERENCE_TYPE]; p != NIL; p = p->next)
-                    {
-                        if (p->value == cand->value)
-                        {
-                            thisAgent->explanationBasedChunker->add_to_OSK(s, p);
-                        }
-                    }
-                    for (p = s->preferences[WORSE_PREFERENCE_TYPE]; p != NIL; p = p->next)
-                    {
-                        if (p->referent == cand->value)
-                        {
-                            thisAgent->explanationBasedChunker->add_to_OSK(s, p);
-                        }
-                    }
-                }
                 prev_cand = cand;
             }
             cand = cand->next_candidate;
@@ -1551,28 +1476,14 @@ byte run_preference_semantics(agent* thisAgent,
     if ((!candidates) || (!candidates->next_candidate))
     {
         *result_candidates = candidates;
-        if (candidates)
-        {
-            /* Update RL values for the winning candidate */
-            rl_update_for_one_candidate(thisAgent, s, consistency, candidates);
-        }
-        else
-        {
-            if (add_OSK && s->OSK_prefs)
-            {
-                clear_preference_list(thisAgent, s->OSK_prefs);
-            }
-        }
-        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
-        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, candidates);
-        return NONE_IMPASSE_TYPE;
+        if (candidates) rl_update_for_one_candidate(thisAgent, s, consistency, candidates);
+        return generate_OSK(thisAgent, s, candidates, add_OSK, NONE_IMPASSE_TYPE);
     }
 
     /* === Bests === */
 
     if (s->preferences[BEST_PREFERENCE_TYPE])
     {
-
         /* Initialize decider flags for all candidates */
         for (cand = candidates; cand != NIL; cand = cand->next_candidate)
         {
@@ -1588,32 +1499,17 @@ byte run_preference_semantics(agent* thisAgent,
         /* Reduce candidates list to only those with best preference flag and add pref to OSK prefs */
         prev_cand = NIL;
         for (cand = candidates; cand != NIL; cand = cand->next_candidate)
+        {
             if (cand->value->decider_flag == BEST_DECIDER_FLAG)
             {
-                if (add_OSK)
-                {
-                    for (p = s->preferences[BEST_PREFERENCE_TYPE]; p != NIL; p = p->next)
-                    {
-                        if (p->value == cand->value)
-                        {
-                            thisAgent->explanationBasedChunker->add_to_OSK(s, p);
-                        }
-                    }
-                }
                 if (prev_cand)
-                {
                     prev_cand->next_candidate = cand;
-                }
                 else
-                {
                     candidates = cand;
-                }
                 prev_cand = cand;
             }
-        if (prev_cand)
-        {
-            prev_cand->next_candidate = NIL;
         }
+        if (prev_cand) prev_cand->next_candidate = NIL;
     }
 
     /* Exit point 3: Check if we're done, i.e. 0 or 1 candidates left */
@@ -1621,28 +1517,14 @@ byte run_preference_semantics(agent* thisAgent,
     if ((!candidates) || (!candidates->next_candidate))
     {
         *result_candidates = candidates;
-        if (candidates)
-        {
-            /* Update RL values for the winning candidate */
-            rl_update_for_one_candidate(thisAgent, s, consistency, candidates);
-        }
-        else
-        {
-            if (add_OSK && s->OSK_prefs)
-            {
-                clear_preference_list(thisAgent, s->OSK_prefs);
-            }
-        }
-        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
-        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, candidates);
-        return NONE_IMPASSE_TYPE;
+        if (candidates) rl_update_for_one_candidate(thisAgent, s, consistency, candidates);
+        return generate_OSK(thisAgent, s, candidates, add_OSK, NONE_IMPASSE_TYPE);
     }
 
     /* === Worsts === */
 
     if (s->preferences[WORST_PREFERENCE_TYPE])
     {
-
         /* Initialize decider flags for all candidates */
         for (cand = candidates; cand != NIL; cand = cand->next_candidate)
         {
@@ -1655,20 +1537,21 @@ byte run_preference_semantics(agent* thisAgent,
             p->value->decider_flag = WORST_DECIDER_FLAG;
         }
 
-        /* Because we only want to add worst preferences to the OSK prefs if they actually have an impact
-        * on the candidate list, we must first see if there's at least one non-worst candidate. */
-
-        if (add_OSK)
-        {
-            some_not_worst = false;
-            for (cand = candidates; cand != NIL; cand = cand->next_candidate)
-            {
-                if (cand->value->decider_flag != WORST_DECIDER_FLAG)
-                {
-                    some_not_worst = true;
-                }
-            }
-        }
+        /* MToDo | Remove if we don't need to cache */
+//        /* Because we only want to add worst preferences to the OSK prefs if they actually have an impact
+//        * on the candidate list, we must first see if there's at least one non-worst candidate. */
+//
+//        if (add_OSK)
+//        {
+//            some_not_worst = false;
+//            for (cand = candidates; cand != NIL; cand = cand->next_candidate)
+//            {
+//                if (cand->value->decider_flag != WORST_DECIDER_FLAG)
+//                {
+//                    some_not_worst = true;
+//                }
+//            }
+//        }
 
         prev_cand = NIL;
         for (cand = candidates; cand != NIL; cand = cand->next_candidate)
@@ -1685,25 +1568,8 @@ byte run_preference_semantics(agent* thisAgent,
                 }
                 prev_cand = cand;
             }
-            else
-            {
-                if (add_OSK && some_not_worst)
-                {
-                    /* Add this worst preference to OSK prefs */
-                    for (p = s->preferences[WORST_PREFERENCE_TYPE]; p != NIL; p = p->next)
-                    {
-                        if (p->value == cand->value)
-                        {
-                            thisAgent->explanationBasedChunker->add_to_OSK(s, p);
-                        }
-                    }
-                }
-            }
         }
-        if (prev_cand)
-        {
-            prev_cand->next_candidate = NIL;
-        }
+        if (prev_cand) prev_cand->next_candidate = NIL;
     }
 
     /* Exit point 4: Check if we're done, i.e. 0 or 1 candidates left */
@@ -1711,21 +1577,9 @@ byte run_preference_semantics(agent* thisAgent,
     if ((!candidates) || (!candidates->next_candidate))
     {
         *result_candidates = candidates;
-        if (candidates)
-        {
-            /* Update RL values for the winning candidate */
-            rl_update_for_one_candidate(thisAgent, s, consistency, candidates);
-        }
-        else
-        {
-            if (add_OSK && s->OSK_prefs)
-            {
-                clear_preference_list(thisAgent, s->OSK_prefs);
-            }
-        }
-        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
-        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, candidates);
-        return NONE_IMPASSE_TYPE;
+        if (candidates) rl_update_for_one_candidate(thisAgent, s, consistency, candidates);
+
+        return generate_OSK(thisAgent, s, candidates, add_OSK, NONE_IMPASSE_TYPE);
     }
 
     /* === Indifferents === */
@@ -1768,11 +1622,12 @@ byte run_preference_semantics(agent* thisAgent,
         {
             continue;
         }
-        else if (cand->value->decider_flag == UNARY_INDIFFERENT_CONSTANT_DECIDER_FLAG)
-        {
-            some_numeric = true;
-            continue;
-        }
+        /* MToDo | Remove if we don't need to cache */
+//        else if (cand->value->decider_flag == UNARY_INDIFFERENT_CONSTANT_DECIDER_FLAG)
+//        {
+//            some_numeric = true;
+//            continue;
+//        }
 
         /* Candidate has either only binary indifferences or no indifference prefs
          * at all, so make sure there is a binary preference between its operator
@@ -1780,10 +1635,8 @@ byte run_preference_semantics(agent* thisAgent,
 
         for (p = candidates; p != NIL; p = p->next_candidate)
         {
-            if (p == cand)
-            {
-                continue;
-            }
+            if (p == cand) continue;
+
             match_found = false;
             for (p2 = s->preferences[BINARY_INDIFFERENT_PREFERENCE_TYPE]; p2 != NIL; p2 = p2->next)
                 if (((p2->value == cand->value) && (p2->referent == p->value)) ||
@@ -1798,10 +1651,7 @@ byte run_preference_semantics(agent* thisAgent,
                 break;
             }
         }
-        if (not_all_indifferent)
-        {
-            break;
-        }
+        if (not_all_indifferent) break;
     }
 
     if (!not_all_indifferent)
@@ -1814,89 +1664,20 @@ byte run_preference_semantics(agent* thisAgent,
                 build_rl_trace(thisAgent, candidates, *result_candidates);
             }
             (*result_candidates)->next_candidate = NIL;
-
-            if (add_OSK)
-            {
-
-                /* Add all indifferent preferences associated with the chosen candidate to the OSK prefs.*/
-
-                if (some_numeric)
-                {
-
-                    /* Note that numeric indifferent preferences are never considered duplicates, so we
-                    * pass an extra argument to add_to_OSK so that it does not check for duplicates.*/
-
-                    for (p = s->preferences[NUMERIC_INDIFFERENT_PREFERENCE_TYPE]; p != NIL; p = p->next)
-                    {
-                        if (p->value == (*result_candidates)->value)
-                        {
-                            thisAgent->explanationBasedChunker->add_to_OSK(s, p, false);
-                        }
-                    }
-
-                    /* Now add any binary preferences with a candidate that does NOT have a numeric preference. */
-
-                    for (p = s->preferences[BINARY_INDIFFERENT_PREFERENCE_TYPE]; p != NIL; p = p->next)
-                    {
-                        if ((p->value == (*result_candidates)->value) || (p->referent == (*result_candidates)->value))
-                        {
-                            if ((p->referent->decider_flag != UNARY_INDIFFERENT_CONSTANT_DECIDER_FLAG) ||
-                                    (p->value->decider_flag != UNARY_INDIFFERENT_CONSTANT_DECIDER_FLAG))
-                            {
-                                thisAgent->explanationBasedChunker->add_to_OSK(s, p);
-                            }
-                        }
-                    }
-                }
-                else
-                {
-
-                    /* This decision was non-numeric, so add all non-numeric preferences associated with the
-                     * chosen candidate to the OSK prefs.*/
-
-                    /* Note:  We've disabled unary indifferents because they were causing problems in certain demo agents
-                     *        All of the OSK prefs that involve uncertainty now seem weird. Will need to reconsider how
-                     *        we handle them now  that we have a better handle for correctness issues and are thinking
-                     *        about the possibility of probabilistic chunks.*/
-
-//                    for (p = s->preferences[UNARY_INDIFFERENT_PREFERENCE_TYPE]; p != NIL; p = p->next)
-//                    {
-//                        if (p->value == (*result_candidates)->value)
-//                        {
-//                            thisAgent->explanationBasedChunker->add_to_OSK(s, p);
-//                        }
-//                    }
-                    for (p = s->preferences[BINARY_INDIFFERENT_PREFERENCE_TYPE]; p != NIL; p = p->next)
-                    {
-                        if ((p->value == (*result_candidates)->value) || (p->referent == (*result_candidates)->value))
-                        {
-                            thisAgent->explanationBasedChunker->add_to_OSK(s, p);
-                        }
-                    }
-                }
-            }
         }
         else
         {
             *result_candidates = candidates;
         }
 
-        return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
-        if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, *result_candidates);
-        return NONE_IMPASSE_TYPE;
+        return generate_OSK(thisAgent, s, *result_candidates, add_OSK, NONE_IMPASSE_TYPE);
     }
 
     /* Candidates are not all indifferent, so we have a tie. */
 
     *result_candidates = candidates;
-    if (add_OSK && s->OSK_prefs)
-    {
-        clear_preference_list(thisAgent, s->OSK_prefs);
-    }
 
-    return generate_OSK(thisAgent, s, NULL, NULL, add_OSK, NONE_IMPASSE_TYPE);
-    if (add_OSK) thisAgent->explanationBasedChunker->generate_relevant_OSK(s, NULL);
-    return TIE_IMPASSE_TYPE;
+    return generate_OSK(thisAgent, s, NULL, add_OSK, TIE_IMPASSE_TYPE);
 }
 
 /* **************************************************************************

@@ -166,12 +166,138 @@ void Explanation_Based_Chunker::update_proposal_OSK(slot* s, preference* winner)
     }
 }
 
-void Explanation_Based_Chunker::generate_relevant_OSK(slot* s, preference* winner, preference* candidates)
+void Explanation_Based_Chunker::generate_relevant_OSK(slot* s, preference* winner)
 {
-    if (candidates)
+    if (winner)
     {
+        if (s->all_preferences->all_of_slot_next)
+        {
+//            /* If there are reject or prohibit preferences, then
+//             * add all reject and prohibit preferences to OSK prefs */
+//
+//            if (s->preferences[PROHIBIT_PREFERENCE_TYPE] || s->preferences[REJECT_PREFERENCE_TYPE])
+//            {
+//                for (p = s->preferences[PROHIBIT_PREFERENCE_TYPE]; p != NIL; p = p->next)
+//                {
+//                    thisAgent->explanationBasedChunker->add_to_OSK(s, p);
+//                }
+//                for (p = s->preferences[REJECT_PREFERENCE_TYPE]; p != NIL; p = p->next)
+//                {
+//                    thisAgent->explanationBasedChunker->add_to_OSK(s, p);
+//                }
+//            }
+//
+//            /* Add better/worse preferences to OSK prefs */
+//            for (p = s->preferences[BETTER_PREFERENCE_TYPE]; p != NIL; p = p->next)
+//            {
+//                if (p->value == cand->value)
+//                {
+//                    thisAgent->explanationBasedChunker->add_to_OSK(s, p);
+//                }
+//            }
+//            for (p = s->preferences[WORSE_PREFERENCE_TYPE]; p != NIL; p = p->next)
+//            {
+//                if (p->referent == cand->value)
+//                {
+//                    thisAgent->explanationBasedChunker->add_to_OSK(s, p);
+//                }
+//            }
+//            for (p = s->preferences[BEST_PREFERENCE_TYPE]; p != NIL; p = p->next)
+//            {
+//                if (p->value == cand->value)
+//                {
+//                    thisAgent->explanationBasedChunker->add_to_OSK(s, p);
+//                }
+//            }
+//            /* Because we only want to add worst preferences to the OSK prefs if they actually have an impact
+//            * on the candidate list, we must first see if there's at least one non-worst candidate. */
+//
+//            if (add_OSK)
+//            {
+//                some_not_worst = false;
+//                for (cand = candidates; cand != NIL; cand = cand->next_candidate)
+//                {
+//                    if (cand->value->decider_flag != WORST_DECIDER_FLAG)
+//                    {
+//                        some_not_worst = true;
+//                    }
+//                }
+//            }
+//            if (add_OSK && some_not_worst)
+//            {
+//                /* Add this worst preference to OSK prefs */
+//                for (p = s->preferences[WORST_PREFERENCE_TYPE]; p != NIL; p = p->next)
+//                {
+//                    if (p->value == cand->value)
+//                    {
+//                        thisAgent->explanationBasedChunker->add_to_OSK(s, p);
+//                    }
+//                }
+//            }
+//            if (add_OSK)
+//            {
+//
+//                /* Add all indifferent preferences associated with the chosen candidate to the OSK prefs.*/
+//
+//                if (some_numeric)
+//                {
+//
+//                    /* Note that numeric indifferent preferences are never considered duplicates, so we
+//                    * pass an extra argument to add_to_OSK so that it does not check for duplicates.*/
+//
+//                    for (p = s->preferences[NUMERIC_INDIFFERENT_PREFERENCE_TYPE]; p != NIL; p = p->next)
+//                    {
+//                        if (p->value == (*result_candidates)->value)
+//                        {
+//                            thisAgent->explanationBasedChunker->add_to_OSK(s, p, false);
+//                        }
+//                    }
+//
+//                    /* Now add any binary preferences with a candidate that does NOT have a numeric preference. */
+//
+//                    for (p = s->preferences[BINARY_INDIFFERENT_PREFERENCE_TYPE]; p != NIL; p = p->next)
+//                    {
+//                        if ((p->value == (*result_candidates)->value) || (p->referent == (*result_candidates)->value))
+//                        {
+//                            if ((p->referent->decider_flag != UNARY_INDIFFERENT_CONSTANT_DECIDER_FLAG) ||
+//                                    (p->value->decider_flag != UNARY_INDIFFERENT_CONSTANT_DECIDER_FLAG))
+//                            {
+//                                thisAgent->explanationBasedChunker->add_to_OSK(s, p);
+//                            }
+//                        }
+//                    }
+//                }
+//                else
+//                {
+//
+//                    /* This decision was non-numeric, so add all non-numeric preferences associated with the
+//                     * chosen candidate to the OSK prefs.*/
+//
+//                    /* Note:  We've disabled unary indifferents because they were causing problems in certain demo agents
+//                     *        All of the OSK prefs that involve uncertainty now seem weird. Will need to reconsider how
+//                     *        we handle them now  that we have a better handle for correctness issues and are thinking
+//                     *        about the possibility of probabilistic chunks.*/
+//
+////                    for (p = s->preferences[UNARY_INDIFFERENT_PREFERENCE_TYPE]; p != NIL; p = p->next)
+////                    {
+////                        if (p->value == (*result_candidates)->value)
+////                        {
+////                            thisAgent->explanationBasedChunker->add_to_OSK(s, p);
+////                        }
+////                    }
+//                    for (p = s->preferences[BINARY_INDIFFERENT_PREFERENCE_TYPE]; p != NIL; p = p->next)
+//                    {
+//                        if ((p->value == (*result_candidates)->value) || (p->referent == (*result_candidates)->value))
+//                        {
+//                            thisAgent->explanationBasedChunker->add_to_OSK(s, p);
+//                        }
+//                    }
+//                }
+//            }
 
+        } else {
+            /* Only one preference determined this winner */
+        }
     }
-
     update_proposal_OSK(s, winner);
 }

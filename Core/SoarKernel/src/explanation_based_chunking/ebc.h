@@ -83,7 +83,7 @@ class Explanation_Based_Chunker
         /* Methods for operator selection knowledge tracking. */
         void    add_to_OSK(slot* s, preference* pref, bool unique_value = true);
         void    copy_OSK(instantiation* inst);
-        void    generate_relevant_OSK(slot* s, preference* winner, preference* candidates);
+        void    generate_relevant_OSK(slot* s, preference* winner);
 
         /* Methods for identity set propagation and analysis */
         Identity*   create_new_identity(Symbol* pGoal);
